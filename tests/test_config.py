@@ -57,3 +57,12 @@ def test_lighting_configuration_is_validated():
         "mode": "sync", "color": "#12abef", "brightness": 100,
         "speed": 1, "showVolumeProgress": True,
     }
+
+
+def test_v5_config_without_lighting_gets_safe_defaults():
+    config = json.loads(json.dumps(DEFAULT_CONFIG))
+    config["schemaVersion"] = 5
+    config.pop("lighting")
+    checked = validate_config(config)
+    assert checked["schemaVersion"] == 6
+    assert checked["lighting"] == DEFAULT_CONFIG["lighting"]
