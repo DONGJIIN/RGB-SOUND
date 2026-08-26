@@ -99,6 +99,8 @@ class SerialWorker:
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._reconnect = threading.Event()
+        self._lighting_pending = threading.Event()
+        self._pending_lighting: bytes | None = None
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
@@ -117,6 +119,13 @@ class SerialWorker:
     def reconnect(self) -> None:
         self._reconnect.set()
 
+    def update_lighting(self, lighting: dict) -> None:
+        """Queue a lighting update without interrupting the serial connection."""
+        packet = encode_lighting_command(lighting)
+        with self._lock:
+            self._pending_lighting = packet
+            self._lighting_pending.set()
+
     def snapshot(self) -> dict:
         with self._lock:
             return self.state.as_dict()
@@ -125,6 +134,14 @@ class SerialWorker:
         with self._lock:
             for key, value in changes.items():
                 setattr(self.state, key, value)
+
+    def _write_pending_lighting(self, connection) -> None:
+        with self._lock:
+            packet = self._pending_lighting
+            self._pending_lighting = None
+            self._lighting_pending.clear()
+        if packet is not None:
+            connection.write(packet)
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -136,10 +153,13 @@ class SerialWorker:
                 continue
             self._reconnect.clear()
             try:
-                with serial.Serial(port, config["baudRate"], timeout=1) as connection:
+                with serial.Serial(port, config["baudRate"], timeout=0.05) as connection:
                     connection.write(encode_lighting_command(self.get_config()["lighting"]))
+                    self._write_pending_lighting(connection)
                     self._set_state(connected=True, port=port, message="串口已连接，等待旋钮数据")
                     while not self._stop.is_set() and not self._reconnect.is_set():
+                        if self._lighting_pending.is_set():
+                            self._write_pending_lighting(connection)
                         raw = connection.readline()
                         if not raw:
                             continue

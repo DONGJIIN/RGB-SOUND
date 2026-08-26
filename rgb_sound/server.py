@@ -10,6 +10,7 @@ from comtypes.client import CreateObject
 from flask import Flask, jsonify, request, send_from_directory
 
 from . import __version__
+from .config import validate_config
 from .serial_worker import available_ports
 
 
@@ -39,11 +40,26 @@ def create_app(store, serial_worker, audio) -> Flask:
     @app.put("/api/config")
     def put_config():
         try:
+            previous = store.get()
             saved = store.replace(request.get_json(force=True))
-            serial_worker.reconnect()
+            if saved["serial"] != previous["serial"]:
+                serial_worker.reconnect()
+            elif saved["lighting"] != previous.get("lighting"):
+                serial_worker.update_lighting(saved["lighting"])
             return jsonify(saved)
         except (ValueError, TypeError) as error:
             return jsonify({"error": str(error)}), 400
+
+    @app.post("/api/lighting/preview")
+    def preview_lighting():
+        try:
+            candidate = store.get()
+            candidate["lighting"] = request.get_json(force=True)
+            lighting = validate_config(candidate)["lighting"]
+            serial_worker.update_lighting(lighting)
+            return jsonify({"ok": True, "lighting": lighting})
+        except (ValueError, TypeError):
+            return jsonify({"error": "灯效设置无效"}), 400
 
     @app.get("/api/ports")
     def ports():

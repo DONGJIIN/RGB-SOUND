@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>RGB-SOUND 控制台</title>
-  <link rel="stylesheet" href="/static/styles.css?v=1.4.1">
+  <link rel="stylesheet" href="/static/styles.css?v=1.5.0">
 </head>
 <body>
   <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
@@ -35,7 +35,7 @@
         <label>变化速度 <output id="speedValue"></output><input id="lightSpeed" type="range" min="1" max="100" step="1"></label>
       </div>
       <div class="switch-row"><div><strong>旋转时显示音量进度</strong><small>关闭后旋钮不会打断当前灯效</small></div><label class="switch"><input id="showVolumeProgress" type="checkbox"><span></span></label></div>
-      <p class="lighting-note">保存后立即下发到控制板。按钮固定用于系统主音量静音/解除静音，不再切换灯效。</p>
+      <p class="lighting-note">调整时会在控制板上即时预览，点击“保存并应用”后永久保留。按钮固定用于系统主音量静音/解除静音。</p>
     </section>
 
     <section class="settings panel">
@@ -56,6 +56,6 @@
 
   <div id="saveBar" class="save-bar"><span id="saveMessage">配置已修改</span><button id="discardButton" class="ghost">放弃</button><button id="saveButton" class="primary">保存并应用</button></div>
   <div id="toast" class="toast"></div>
-  <script src="/static/app.js?v=1.4.1"></script>
+  <script src="/static/app.js?v=1.5.0"></script>
 </body>
 </html>

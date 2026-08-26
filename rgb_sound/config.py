@@ -132,6 +132,8 @@ def validate_config(value: dict[str, Any]) -> dict[str, Any]:
         "openBrowser": bool(behavior.get("openBrowser", True)),
     }
     lighting = value.get("lighting", {})
+    if not isinstance(lighting, dict):
+        raise ValueError("灯效设置必须是对象")
     mode = str(lighting.get("mode", "breathing")).lower()
     if mode not in {"off", "solid", "breathing", "sync"}:
         mode = "breathing"
