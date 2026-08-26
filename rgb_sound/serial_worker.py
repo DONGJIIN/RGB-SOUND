@@ -52,13 +52,26 @@ def parse_frame(line: str) -> tuple[int, int, int, int] | None:
     return values  # type: ignore[return-value]
 
 
-def parse_effect_event(line: str) -> str | None:
-    parts = [part.strip().upper() for part in line.strip().split("|")]
-    if len(parts) != 2 or parts[0] != "FX":
-        return None
-    if parts[1] not in {"BREATHING", "SYNC", "RAINBOW"}:
-        return None
-    return parts[1]
+def parse_button_event(line: str) -> str | None:
+    return "MUTE" if line.strip().upper() == "BTN|MUTE" else None
+
+
+def encode_lighting_command(lighting: dict) -> bytes:
+    """Encode a compact fixed-size command for the memory-constrained CH552."""
+    modes = {"off": 0, "solid": 1, "breathing": 2, "sync": 3}
+    mode = modes.get(str(lighting.get("mode", "breathing")).lower(), 2)
+    if lighting.get("showVolumeProgress", True):
+        mode |= 0x80
+    brightness = round(max(0, min(100, int(lighting.get("brightness", 35)))) * 255 / 100)
+    speed = max(1, min(100, int(lighting.get("speed", 25))))
+    color = str(lighting.get("color", "#72f1b8")).lstrip("#")
+    try:
+        red, green, blue = (int(color[i:i + 2], 16) for i in (0, 2, 4))
+    except (ValueError, TypeError):
+        red, green, blue = 0x72, 0xF1, 0xB8
+    packet = bytearray((0xA5, mode, brightness, speed, red, green, blue))
+    packet.append(packet[0] ^ packet[1] ^ packet[2] ^ packet[3] ^ packet[4] ^ packet[5] ^ packet[6])
+    return bytes(packet)
 
 
 def choose_port(preference: str) -> str | None:
@@ -77,9 +90,11 @@ class SerialWorker:
         self,
         get_config: Callable[[], dict],
         on_values: Callable[[tuple[int, int, int, int]], None],
+        on_mute: Callable[[], bool],
     ):
         self.get_config = get_config
         self.on_values = on_values
+        self.on_mute = on_mute
         self.state = DeviceState()
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -122,21 +137,20 @@ class SerialWorker:
             self._reconnect.clear()
             try:
                 with serial.Serial(port, config["baudRate"], timeout=1) as connection:
+                    connection.write(encode_lighting_command(self.get_config()["lighting"]))
                     self._set_state(connected=True, port=port, message="串口已连接，等待旋钮数据")
                     while not self._stop.is_set() and not self._reconnect.is_set():
                         raw = connection.readline()
                         if not raw:
                             continue
                         line = raw.decode("ascii", errors="ignore")
-                        effect = parse_effect_event(line)
-                        if effect is not None:
-                            message = {
-                                "BREATHING": "灯效：呼吸灯",
-                                "SYNC": "灯效：同步变色",
-                                "RAINBOW": "灯效：幻彩灯",
-                            }[effect]
-                            now = time.time()
-                            self._set_state(effect_message=message, effect_event_at=now)
+                        if parse_button_event(line) == "MUTE":
+                            try:
+                                muted = self.on_mute()
+                                message = "系统主音量：已静音" if muted else "系统主音量：已解除静音"
+                            except Exception:
+                                message = "静音切换失败"
+                            self._set_state(effect_message=message, effect_event_at=time.time())
                             continue
                         frame = parse_frame(line)
                         if frame is None:

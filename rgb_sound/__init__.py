@@ -1,3 +1,3 @@
 """RGB-SOUND: configurable four-knob Windows audio mixer."""
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"

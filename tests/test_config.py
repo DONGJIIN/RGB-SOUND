@@ -34,7 +34,7 @@ def test_legacy_direction_setting_is_migrated_to_protocol_default():
     config.pop("schemaVersion")
     config["serial"]["invert"] = True
     migrated = validate_config(config)
-    assert migrated["schemaVersion"] == 5
+    assert migrated["schemaVersion"] == 6
     assert migrated["serial"]["invert"] is False
 
 
@@ -44,6 +44,16 @@ def test_older_config_migrates_to_high_sensitivity():
     config["behavior"]["changeThreshold"] = 3
     config["behavior"]["updateIntervalMs"] = 25
     migrated = validate_config(config)
-    assert migrated["schemaVersion"] == 5
+    assert migrated["schemaVersion"] == 6
     assert migrated["behavior"]["changeThreshold"] == 0.25
     assert migrated["behavior"]["updateIntervalMs"] == 10
+
+
+def test_lighting_configuration_is_validated():
+    config = json.loads(json.dumps(DEFAULT_CONFIG))
+    config["lighting"].update({"mode": "sync", "color": "#12ABef", "brightness": 150, "speed": 0})
+    checked = validate_config(config)
+    assert checked["lighting"] == {
+        "mode": "sync", "color": "#12abef", "brightness": 100,
+        "speed": 1, "showVolumeProgress": True,
+    }

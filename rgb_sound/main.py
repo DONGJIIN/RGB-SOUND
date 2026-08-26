@@ -99,7 +99,11 @@ def main() -> None:
 
     store = ConfigStore()
     audio = AudioController()
-    worker = SerialWorker(store.get, lambda frame: audio.apply_frame(frame, store.get()))
+    worker = SerialWorker(
+        store.get,
+        lambda frame: audio.apply_frame(frame, store.get()),
+        audio.toggle_master_mute,
+    )
     app = create_app(store, worker, audio)
     worker.start()
 

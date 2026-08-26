@@ -26,6 +26,18 @@
     <div class="section-title"><div><span class="eyebrow">CHANNEL ROUTING</span><h2>旋钮映射</h2></div><button id="scanButton" class="ghost">↻ 扫描声音通道</button></div>
     <section id="channels" class="channel-grid"></section>
 
+    <section class="settings panel lighting-panel">
+      <div class="section-title"><div><span class="eyebrow">RGB LIGHTING</span><h2>灯效自定义</h2></div></div>
+      <div class="settings-grid lighting-grid">
+        <label>灯效模式<select id="lightMode"><option value="off">关闭灯光</option><option value="solid">全灯常亮</option><option value="breathing">呼吸灯</option><option value="sync">全灯同步变色</option></select></label>
+        <label>自定义颜色<input id="lightColor" type="color"></label>
+        <label>亮度 <output id="brightnessValue"></output><input id="lightBrightness" type="range" min="0" max="100" step="1"></label>
+        <label>变化速度 <output id="speedValue"></output><input id="lightSpeed" type="range" min="1" max="100" step="1"></label>
+      </div>
+      <div class="switch-row"><div><strong>旋转时显示音量进度</strong><small>关闭后旋钮不会打断当前灯效</small></div><label class="switch"><input id="showVolumeProgress" type="checkbox"><span></span></label></div>
+      <p class="lighting-note">保存后立即下发到控制板。按钮固定用于系统主音量静音/解除静音，不再切换灯效。</p>
+    </section>
+
     <section class="settings panel">
       <div class="section-title"><div><span class="eyebrow">DEVICE</span><h2>设备与校准</h2></div></div>
       <div class="settings-grid">

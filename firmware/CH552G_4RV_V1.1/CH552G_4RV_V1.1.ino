@@ -9,10 +9,7 @@
 // ===== 阈值和时间相关宏定义 =====
 #define ANALOG_THRESHOLD_LOW  5     // 模拟输入最低阈值
 #define ANALOG_THRESHOLD_HIGH 250   // 模拟输入最高阈值
-#define MAX_BRIGHTNESS 255          // LED最大亮度
-#define FLOWING_BRIGHTNESS 64       // 流动效果亮度
 #define PROGRESS_BRIGHTNESS 128     // 进度条效果亮度
-#define BREATHING_BRIGHTNESS 192    // 呼吸灯效果亮度
 #define INACTIVE_TIMEOUT 2000       // 无活动超时时间（毫秒）
 #define MIN_FRAME_INTERVAL 5        // 旋钮变化时最快每5ms发送一次
 #define HEARTBEAT_INTERVAL 100      // 静止时每100ms发送一次状态帧
@@ -29,7 +26,8 @@ enum LedMode {                // LED显示模式枚举
   MODE_PROGRESS,             // 旋钮音量进度条
   MODE_BREATHING,            // 呼吸灯
   MODE_SYNC_COLOR,           // 所有灯珠同步变色
-  MODE_RAINBOW               // 幻彩灯
+  MODE_SOLID,                // 所有灯珠常亮
+  MODE_OFF                   // 关闭灯光
 };
 
 // ===== 硬件引脚定义 =====
@@ -60,7 +58,13 @@ int analogSliderValues[NUM_SLIDERS];              // 当前滑块值数组
 int lastSliderValues[NUM_SLIDERS] = {0};         // 上次滑块值数组
 bool isActive[NUM_SLIDERS] = {false};            // 滑块活动状态标志
 int currentMode = MODE_BREATHING;                 // 当前LED显示模式
-int selectedEffect = MODE_BREATHING;              // 按钮选中的待机灯效
+int selectedEffect = MODE_BREATHING;              // 软件配置的待机灯效
+uint8_t lightingBrightness = 89;                  // 软件设置的亮度（默认35%）
+uint8_t lightingSpeed = 25;                       // 软件设置的速度（1-100）
+uint8_t lightingRed = 114;                        // 软件设置的红色分量
+uint8_t lightingGreen = 241;                      // 软件设置的绿色分量
+uint8_t lightingBlue = 184;                       // 软件设置的蓝色分量
+bool showVolumeProgress = true;                   // 旋转时是否显示进度条
 unsigned long lastActivityTime = 0;               // 最后活动时间
 int lastActiveSlider = -1;                       // 最后活动的滑块索引
 unsigned long taskLastRun[NUM_TASKS] = {0};      // 各任务上次执行时间
@@ -72,18 +76,21 @@ bool sliderValuesChanged = true;                 // 是否有待发送的旋钮�
 void setIndividualLEDColor(uint8_t ledIndex, uint8_t red, uint8_t green, 
     uint8_t blue, uint8_t brightness);  // 设置单个LED的颜色和亮度
 void updateLEDProgressBar();    // 更新LED进度条显示效果
-void flowingColorEffect();      // 实现流动彩虹灯效果
 void breathingEffect();         // 实现呼吸灯效果
 void synchronizedColorEffect(); // 所有灯珠同步变色
+void solidColorEffect();        // 所有灯珠显示自定义颜色
+void offEffect();               // 关闭所有灯珠
 
 // 按键处理函数
 void handleButtonEvents();      // 处理按键输入与消抖
-void cycleLedEffect();          // 切换呼吸、同步变色、幻彩灯效
+void sendMuteEvent();           // 请求桌面软件切换系统主音量静音
 
 // 输入处理函数
 void readAnalogInputs();        // 读取并处理所有滑块的输入值
 void sendSliderValues();        // 将滑块值通过串口发送
 int mapValue(int inputValue);   // 将输入值映射到目标范围
+void processUsbCommands();      // 接收桌面软件下发的灯效设置
+void applyLightingPacket(uint8_t *packet); // 应用8字节灯效指令
 
 // 任务相关函数
 void task1();                   // 执行滑块输入读取和数据发送
@@ -107,6 +114,7 @@ void setup() {
 
 // 主循环函数：按固定时间间隔执行任务调度
 void loop() {
+  processUsbCommands();
   // === 获取当前系统时间 ===
   unsigned long currentMillis = millis();
   
@@ -158,7 +166,7 @@ void readAnalogInputs() {
       lastSliderValues[i] = currentValue;
       
       // === 更新显示模式和相关状态 ===
-      currentMode = MODE_PROGRESS;     // 切换到进度条显示模式
+      if (showVolumeProgress) currentMode = MODE_PROGRESS;
       lastActivityTime = millis();     // 记录活动时间
       lastActiveSlider = i;           // 记录当前活动的滑块
     }
@@ -210,7 +218,7 @@ void task2() {
   unsigned long currentMillis = millis();
   
   // === 自动模式切换逻辑 ===
-  // 旋钮停止操作后，恢复按钮选中的待机灯效
+  // 旋钮停止操作后，恢复软件配置的待机灯效
   if (currentMode == MODE_PROGRESS && 
       (currentMillis - lastActivityTime) >= INACTIVE_TIMEOUT) {
     currentMode = selectedEffect;
@@ -227,8 +235,11 @@ void task2() {
     case MODE_SYNC_COLOR:
       synchronizedColorEffect();
       break;
-    case MODE_RAINBOW:
-      flowingColorEffect();
+    case MODE_SOLID:
+      solidColorEffect();
+      break;
+    case MODE_OFF:
+      offEffect();
       break;
   }
 }
@@ -290,78 +301,35 @@ void updateLEDProgressBar() {
   neopixel_show_P1_7(ledData, NUM_BYTES);
 }
 
-// 实现流动彩虹效果：通过HSV色彩空间实现平滑的颜色过渡
-void flowingColorEffect() {
-  static uint8_t hueStart = 0;    // 静态变量，保存起始色相值（0-255）
-
-  // 为每个LED设置颜色
-  for (int i = 0; i < NUM_LEDS; i++) {
-    // 计算当前LED的色相值：起始色相 + 位置偏移
-    // 使用取模运算确保色相值在0-255范围内循环
-    uint8_t hue = (hueStart + i * (255 / NUM_LEDS)) % 255;
-
-    // 声明RGB分量变量
-    uint8_t red = 0, green = 0, blue = 0;
-    
-    // HSV转RGB的简化算法
-    // 将0-255的色相范围分为三个区间，每个区间实现两个颜色之间的渐变
-    if (hue < 85) {  // 红色渐变为绿色
-      red = 255 - hue * 3;    // 红色递减
-      green = hue * 3;        // 绿色递增
-      blue = 0;              // 蓝色保持为0
-    } else if (hue < 170) {  // 绿色渐变为蓝色
-      hue -= 85;            // 调整色相值到0-85范围
-      red = 0;              // 红色保持为0
-      green = 255 - hue * 3; // 绿色递减
-      blue = hue * 3;        // 蓝色递增
-    } else {  // 蓝色渐变为红色
-      hue -= 170;           // 调整色相值到0-85范围
-      red = hue * 3;        // 红色递增
-      green = 0;            // 绿色保持为0
-      blue = 255 - hue * 3; // 蓝色递减
-    }
-
-    // 设置LED颜色，使用预定义的流动效果亮度
-    setIndividualLEDColor(i, red, green, blue, FLOWING_BRIGHTNESS);
-  }
-
-  // 将数据更新到LED硬件
-  neopixel_show_P1_7(ledData, NUM_BYTES);
-
-  // 递增起始色相值，实现颜色流动
-  // 使用取模运算确保在0-255范围内循环
-  hueStart = (hueStart + 1) % 255;
-}
-
 // 实现呼吸灯效果：使LED亮度周期性变化
 void breathingEffect() {
-  // === 初始化呼吸效果参数 ===
-  static uint8_t breathIndex = 0;     // 呼吸效果索引（0-255）
-  static bool increasing = true;       // 亮度是否在增加
-  // === 更新呼吸索引 ===
+  static uint8_t breathIndex = 0;
+  static bool increasing = true;
+  static unsigned long lastUpdate = 0;
+  unsigned long now = millis();
+  unsigned long frameDelay = 55 - lightingSpeed / 2; // 5-55ms，避免高频闪烁
+  if (now - lastUpdate < frameDelay) return;
+  lastUpdate = now;
   if (increasing) {
-    // 亮度递增
     if (++breathIndex >= 255) increasing = false;
   } else {
-    // 亮度递减
     if (--breathIndex <= 0) increasing = true;
   }
-  
-  // === 计算当前亮度 ===
-  uint8_t brightness = ((uint16_t)breathIndex * BREATHING_BRIGHTNESS) >> 8;
-
-  // === 设置所有LED的颜色和亮度 ===
+  uint8_t brightness = ((uint16_t)breathIndex * lightingBrightness) >> 8;
   for (int i = 0; i < NUM_LEDS; i++) {
-    setIndividualLEDColor(i, 0, 255, 120, brightness);
+    setIndividualLEDColor(i, lightingRed, lightingGreen, lightingBlue, brightness);
   }
-  
-  // 更新LED显示
   neopixel_show_P1_7(ledData, NUM_BYTES);
 }
 
-// 同步变色：所有灯珠保持同一颜色，并一起平滑循环色相。
+// 同步变色：全部灯珠永远保持同一颜色，低速平滑变色，不产生空间频闪。
 void synchronizedColorEffect() {
   static uint8_t hue = 0;
+  static unsigned long lastUpdate = 0;
+  unsigned long now = millis();
+  unsigned long frameDelay = 55 - lightingSpeed / 2;
+  if (now - lastUpdate < frameDelay) return;
+  lastUpdate = now;
   uint8_t red = 0, green = 0, blue = 0;
   uint8_t phase = hue;
   if (phase < 85) {
@@ -377,26 +345,26 @@ void synchronizedColorEffect() {
     blue = 255 - phase * 3;
   }
   for (int i = 0; i < NUM_LEDS; i++) {
-    setIndividualLEDColor(i, red, green, blue, FLOWING_BRIGHTNESS);
+    setIndividualLEDColor(i, red, green, blue, lightingBrightness);
   }
   neopixel_show_P1_7(ledData, NUM_BYTES);
   hue++;
 }
 
-// 每次按键依次切换：呼吸灯 -> 同步变色 -> 幻彩灯 -> 呼吸灯
-void cycleLedEffect() {
-  if (selectedEffect == MODE_BREATHING) {
-    selectedEffect = MODE_SYNC_COLOR;
-    USBSerial_println("FX|SYNC");
-  } else if (selectedEffect == MODE_SYNC_COLOR) {
-    selectedEffect = MODE_RAINBOW;
-    USBSerial_println("FX|RAINBOW");
-  } else {
-    selectedEffect = MODE_BREATHING;
-    USBSerial_println("FX|BREATHING");
+void solidColorEffect() {
+  for (int i = 0; i < NUM_LEDS; i++) {
+    setIndividualLEDColor(i, lightingRed, lightingGreen, lightingBlue, lightingBrightness);
   }
-  currentMode = selectedEffect;
-  lastActiveSlider = -1;
+  neopixel_show_P1_7(ledData, NUM_BYTES);
+}
+
+void offEffect() {
+  for (int i = 0; i < NUM_LEDS; i++) setIndividualLEDColor(i, 0, 0, 0, 0);
+  neopixel_show_P1_7(ledData, NUM_BYTES);
+}
+
+void sendMuteEvent() {
+  USBSerial_println("BTN|MUTE");
 }
 
 // 任务3：处理按键输入
@@ -404,7 +372,7 @@ void task3() {
   handleButtonEvents();
 }
 
-// 处理按键事件：按下按钮就切换，避免短按在释放阶段漏触发。
+// 按下按钮只请求桌面软件切换系统主音量静音，不再控制灯效。
 void handleButtonEvents() {
   static unsigned long lastDebounceTime = 0;
   static int lastButtonState = HIGH;
@@ -420,8 +388,43 @@ void handleButtonEvents() {
   if ((currentMillis - lastDebounceTime) >= DEBOUNCE_DELAY &&
       currentButtonState != debouncedButtonState) {
     debouncedButtonState = currentButtonState;
-    if (debouncedButtonState == LOW) cycleLedEffect();
+    if (debouncedButtonState == LOW) sendMuteEvent();
   }
+}
+
+// 固定8字节协议：A5、模式/进度开关、亮度、速度、R、G、B、异或校验。
+void processUsbCommands() {
+  static uint8_t packet[8];
+  static uint8_t position = 0;
+  while (USBSerial_available()) {
+    uint8_t value = (uint8_t)USBSerial_read();
+    if (position == 0 && value != 0xA5) continue;
+    packet[position++] = value;
+    if (position == 8) {
+      uint8_t checksum = packet[0] ^ packet[1] ^ packet[2] ^ packet[3] ^
+                         packet[4] ^ packet[5] ^ packet[6];
+      if (checksum == packet[7]) applyLightingPacket(packet);
+      position = 0;
+    }
+  }
+}
+
+void applyLightingPacket(uint8_t *packet) {
+  uint8_t requestedMode = packet[1] & 0x7F;
+  showVolumeProgress = (packet[1] & 0x80) != 0;
+  lightingBrightness = packet[2];
+  lightingSpeed = packet[3];
+  if (lightingSpeed < 1) lightingSpeed = 1;
+  if (lightingSpeed > 100) lightingSpeed = 100;
+  lightingRed = packet[4];
+  lightingGreen = packet[5];
+  lightingBlue = packet[6];
+  if (requestedMode == 0) selectedEffect = MODE_OFF;
+  else if (requestedMode == 1) selectedEffect = MODE_SOLID;
+  else if (requestedMode == 3) selectedEffect = MODE_SYNC_COLOR;
+  else selectedEffect = MODE_BREATHING;
+  currentMode = selectedEffect;
+  lastActiveSlider = -1;
 }
 
 // 任务调度器：按照预设间隔执行各个任务

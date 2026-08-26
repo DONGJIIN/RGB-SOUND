@@ -40,6 +40,24 @@ class AudioController:
     def last_error(self) -> str | None:
         return self._last_error
 
+    def toggle_master_mute(self) -> bool:
+        """Toggle the default output device mute state and return the new state."""
+        with self._lock:
+            comtypes.CoInitialize()
+            try:
+                if self._speaker_volume_control is None:
+                    self._speaker_volume_control = self._endpoint_volume(AudioUtilities.GetSpeakers())
+                muted = bool(self._speaker_volume_control.GetMute())
+                self._speaker_volume_control.SetMute(not muted, None)
+                self._last_error = None
+                return not muted
+            except Exception as error:
+                self._speaker_volume_control = None
+                self._last_error = str(error)
+                raise
+            finally:
+                comtypes.CoUninitialize()
+
     def list_targets(self) -> list[dict[str, Any]]:
         comtypes.CoInitialize()
         try:

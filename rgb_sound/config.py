@@ -9,7 +9,7 @@ from typing import Any
 
 
 DEFAULT_CONFIG: dict[str, Any] = {
-    "schemaVersion": 5,
+    "schemaVersion": 6,
     "serial": {
         "port": "auto",
         "baudRate": 9600,
@@ -25,6 +25,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
         {"id": 3, "name": "其他应用", "color": "#ff9f6e", "enabled": True, "targets": ["unmapped"]},
     ],
     "behavior": {"changeThreshold": 0.25, "updateIntervalMs": 10, "openBrowser": True},
+    "lighting": {
+        "mode": "breathing",
+        "color": "#72f1b8",
+        "brightness": 35,
+        "speed": 25,
+        "showVolumeProgress": True,
+    },
 }
 
 
@@ -85,7 +92,7 @@ def validate_config(value: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("配置必须是对象")
     result = deepcopy(DEFAULT_CONFIG)
     source_version = int(value.get("schemaVersion", 1))
-    result["schemaVersion"] = 5
+    result["schemaVersion"] = 6
     serial = value.get("serial", {})
     result["serial"] = {
         "port": str(serial.get("port", "auto")),
@@ -123,5 +130,23 @@ def validate_config(value: dict[str, Any]) -> dict[str, Any]:
         "changeThreshold": 0.25 if source_version < 4 else max(0.1, min(10.0, float(behavior.get("changeThreshold", 0.25)))),
         "updateIntervalMs": 10 if source_version < 4 else max(10, min(1000, int(behavior.get("updateIntervalMs", 10)))),
         "openBrowser": bool(behavior.get("openBrowser", True)),
+    }
+    lighting = value.get("lighting", {})
+    mode = str(lighting.get("mode", "breathing")).lower()
+    if mode not in {"off", "solid", "breathing", "sync"}:
+        mode = "breathing"
+    color = str(lighting.get("color", "#72f1b8"))
+    if len(color) != 7 or not color.startswith("#"):
+        color = "#72f1b8"
+    try:
+        int(color[1:], 16)
+    except ValueError:
+        color = "#72f1b8"
+    result["lighting"] = {
+        "mode": mode,
+        "color": color.lower(),
+        "brightness": max(0, min(100, int(lighting.get("brightness", 35)))),
+        "speed": max(1, min(100, int(lighting.get("speed", 25)))),
+        "showVolumeProgress": bool(lighting.get("showVolumeProgress", True)),
     }
     return result
