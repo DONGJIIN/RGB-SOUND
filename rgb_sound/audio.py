@@ -33,6 +33,8 @@ class AudioController:
         self._last_values: list[float | None] = [None] * 4
         self._last_update = 0.0
         self._last_error: str | None = None
+        self._speaker_volume_control = None
+        self._microphone_volume_control = None
 
     @property
     def last_error(self) -> str | None:
@@ -91,8 +93,17 @@ class AudioController:
         with self._lock:
             comtypes.CoInitialize()
             try:
-                sessions = AudioUtilities.GetAllSessions()
-                assigned = self._assigned_processes(config)
+                # Master/microphone-only mappings do not need the comparatively
+                # expensive enumeration of every Windows audio session.
+                session_targets = {
+                    target
+                    for index, _, _ in changed
+                    if config["channels"][index]["enabled"]
+                    for target in config["channels"][index]["targets"]
+                    if target not in {"master", "mic"}
+                }
+                sessions = AudioUtilities.GetAllSessions() if session_targets else []
+                assigned = self._assigned_processes(config) if session_targets else set()
                 for index, value, percent in changed:
                     channel = config["channels"][index]
                     if channel["enabled"]:
@@ -102,6 +113,8 @@ class AudioController:
                 self._last_error = None
             except Exception as error:
                 self._last_error = str(error)
+                self._speaker_volume_control = None
+                self._microphone_volume_control = None
             finally:
                 comtypes.CoUninitialize()
 
@@ -118,9 +131,13 @@ class AudioController:
         foreground = self._foreground_process_name() if "current" in targets else None
         for target in targets:
             if target == "master":
-                self._endpoint_volume(AudioUtilities.GetSpeakers()).SetMasterVolumeLevelScalar(value, None)
+                if self._speaker_volume_control is None:
+                    self._speaker_volume_control = self._endpoint_volume(AudioUtilities.GetSpeakers())
+                self._speaker_volume_control.SetMasterVolumeLevelScalar(value, None)
             elif target == "mic":
-                self._endpoint_volume(AudioUtilities.GetMicrophone()).SetMasterVolumeLevelScalar(value, None)
+                if self._microphone_volume_control is None:
+                    self._microphone_volume_control = self._endpoint_volume(AudioUtilities.GetMicrophone())
+                self._microphone_volume_control.SetMasterVolumeLevelScalar(value, None)
             elif target.startswith("process:"):
                 self._set_sessions(sessions, value, target.removeprefix("process:").lower())
             elif target == "current" and foreground:

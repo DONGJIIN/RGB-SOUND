@@ -13,8 +13,9 @@
 #define FLOWING_BRIGHTNESS 64       // 流动效果亮度
 #define PROGRESS_BRIGHTNESS 128     // 进度条效果亮度
 #define BREATHING_BRIGHTNESS 192    // 呼吸灯效果亮度
-#define ACTIVITY_THRESHOLD 2        // 滑块活动检测阈值（约0.8%，提高灯效响应）
 #define INACTIVE_TIMEOUT 2000       // 无活动超时时间（毫秒）
+#define MIN_FRAME_INTERVAL 5        // 旋钮变化时最快每5ms发送一次
+#define HEARTBEAT_INTERVAL 100      // 静止时每100ms发送一次状态帧
 
 // ===== 枚举定义 =====
 enum TaskState {               // 任务状态枚举
@@ -27,7 +28,7 @@ enum TaskState {               // 任务状态枚举
 enum LedMode {                // LED显示模式枚举
   MODE_PROGRESS,             // 旋钮音量进度条
   MODE_BREATHING,            // 呼吸灯
-  MODE_CHASE,                // 跑马灯
+  MODE_SYNC_COLOR,           // 所有灯珠同步变色
   MODE_RAINBOW               // 幻彩灯
 };
 
@@ -37,10 +38,10 @@ const int analogInputs[NUM_SLIDERS] = {11, 15, 14, 32};  // 模拟输入引脚�
 
 // ===== 时间常量 =====
 const unsigned long TICK_INTERVAL = 1;             // 任务调度时间间隔（毫秒）
-const unsigned long DEBOUNCE_DELAY = 50;          // 按键消抖延时（毫秒）
+const unsigned long DEBOUNCE_DELAY = 20;          // 按键消抖延时（毫秒）
 const unsigned long taskIntervals[NUM_TASKS] = {   // 各任务执行间隔（毫秒）
-  10,   // TASK1 每10ms执行
-  10,   // TASK2 每10ms执行
+  2,    // TASK1 每2ms读取旋钮
+  5,    // TASK2 每5ms更新LED
   1     // TASK3 每1ms执行
 };
 
@@ -63,6 +64,8 @@ int selectedEffect = MODE_BREATHING;              // 按钮选中的待机灯效
 unsigned long lastActivityTime = 0;               // 最后活动时间
 int lastActiveSlider = -1;                       // 最后活动的滑块索引
 unsigned long taskLastRun[NUM_TASKS] = {0};      // 各任务上次执行时间
+unsigned long lastFrameTime = 0;                 // 上次发送旋钮帧的时间
+bool sliderValuesChanged = true;                 // 是否有待发送的旋钮变化
 
 // ===== 函数声明 =====
 // LED相关函数
@@ -71,11 +74,11 @@ void setIndividualLEDColor(uint8_t ledIndex, uint8_t red, uint8_t green,
 void updateLEDProgressBar();    // 更新LED进度条显示效果
 void flowingColorEffect();      // 实现流动彩虹灯效果
 void breathingEffect();         // 实现呼吸灯效果
-void chaseEffect();             // 实现跑马灯效果
+void synchronizedColorEffect(); // 所有灯珠同步变色
 
 // 按键处理函数
 void handleButtonEvents();      // 处理按键输入与消抖
-void cycleLedEffect();          // 切换呼吸、跑马、幻彩灯效
+void cycleLedEffect();          // 切换呼吸、同步变色、幻彩灯效
 
 // 输入处理函数
 void readAnalogInputs();        // 读取并处理所有滑块的输入值
@@ -119,7 +122,15 @@ void loop() {
 // 按照预设的时间间隔定期执行，确保及时响应滑块变化
 void task1() {
   readAnalogInputs();    // 读取并处理所有滑块的输入值
-  sendSliderValues();    // 通过串口发送处理后的滑块数据
+  unsigned long currentMillis = millis();
+  unsigned long elapsed = currentMillis - lastFrameTime;
+  // 旋钮运动时低延迟发送；静止时只保留心跳，避免USB阻塞按键扫描。
+  if ((sliderValuesChanged && elapsed >= MIN_FRAME_INTERVAL) ||
+      elapsed >= HEARTBEAT_INTERVAL) {
+    sendSliderValues();
+    sliderValuesChanged = false;
+    lastFrameTime = currentMillis;
+  }
 }
 
 // 读取并处理所有滑块的模拟输入值
@@ -141,8 +152,8 @@ void readAnalogInputs() {
     }
     
     // === 检测滑块活动状态 ===
-    // 当滑块值变化超过阈值时，认为滑块被激活
-    if (abs(currentValue - lastSliderValues[i]) > ACTIVITY_THRESHOLD) {
+    // ADC每变化一级就立即响应，快速旋转时不会漏掉中间位置。
+    if (currentValue != lastSliderValues[i]) {
       isActive[i] = true;
       lastSliderValues[i] = currentValue;
       
@@ -153,7 +164,11 @@ void readAnalogInputs() {
     }
     
     // 将处理后的值映射到目标范围并存储
-    analogSliderValues[i] = mapValue(currentValue);
+    int mappedValue = mapValue(currentValue);
+    if (mappedValue != analogSliderValues[i]) {
+      analogSliderValues[i] = mappedValue;
+      sliderValuesChanged = true;
+    }
   }
 }
 
@@ -163,15 +178,8 @@ void readAnalogInputs() {
 // 返回：
 // - 映射后的值（0-1023）
 int mapValue(int inputValue) {
-  // === 使用浮点数进行精确的线性映射 ===
-  // 映射公式：output = input * (1023/255)
-  float mappedValue = (float)inputValue * (1023.0 / 255.0);
-
-  // === 将结果四舍五入到最接近的整数 ===
-  // 加0.5后取整，实现四舍五入
-  int outputValue = (int)(mappedValue + 0.5f);
-
-  return outputValue;
+  // 1023 = 4*255+3；纯整数映射比CH552上的浮点计算快得多。
+  return inputValue * 4 + inputValue / 85;
 }
 
 // 将滑块值格式化并通过串口发送
@@ -216,8 +224,8 @@ void task2() {
     case MODE_BREATHING:
       breathingEffect();
       break;
-    case MODE_CHASE:
-      chaseEffect();
+    case MODE_SYNC_COLOR:
+      synchronizedColorEffect();
       break;
     case MODE_RAINBOW:
       flowingColorEffect();
@@ -258,7 +266,8 @@ void updateLEDProgressBar() {
   int sliderValue = analogSliderValues[lastActiveSlider];
   int fullLEDs = sliderValue / stepsPerLED;            // 计算完全点亮的LED数量
   // 计算最后一个LED的亮度百分比
-  float partialLEDBrightness = (float)(sliderValue % stepsPerLED) / (float)stepsPerLED;
+  uint8_t partialLEDBrightness =
+      (uint16_t)(sliderValue % stepsPerLED) * PROGRESS_BRIGHTNESS / stepsPerLED;
 
   // === 设置每个LED的显示状态 ===
   for (int i = 0; i < totalLEDs; i++) {
@@ -270,7 +279,7 @@ void updateLEDProgressBar() {
     } else if (i == fullLEDs) {
       // 部分点亮的LED（渐变效果）
       setIndividualLEDColor(ledIndex, colorR, colorG, colorB, 
-                           (uint8_t)(PROGRESS_BRIGHTNESS * partialLEDBrightness));
+                           partialLEDBrightness);
     } else {
       // 未点亮的LED
       setIndividualLEDColor(ledIndex, 0, 0, 0, 0);
@@ -350,32 +359,36 @@ void breathingEffect() {
   neopixel_show_P1_7(ledData, NUM_BYTES);
 }
 
-// 跑马灯：一个高亮灯珠从左向右循环，后方保留微弱尾光
-void chaseEffect() {
-  static uint8_t position = 0;
-  static uint8_t tick = 0;
-  if (++tick >= 8) {
-    tick = 0;
-    position = (position + 1) % NUM_LEDS;
+// 同步变色：所有灯珠保持同一颜色，并一起平滑循环色相。
+void synchronizedColorEffect() {
+  static uint8_t hue = 0;
+  uint8_t red = 0, green = 0, blue = 0;
+  uint8_t phase = hue;
+  if (phase < 85) {
+    red = 255 - phase * 3;
+    green = phase * 3;
+  } else if (phase < 170) {
+    phase -= 85;
+    green = 255 - phase * 3;
+    blue = phase * 3;
+  } else {
+    phase -= 170;
+    red = phase * 3;
+    blue = 255 - phase * 3;
   }
   for (int i = 0; i < NUM_LEDS; i++) {
-    if (i == position) {
-      setIndividualLEDColor(i, 255, 70, 0, PROGRESS_BRIGHTNESS);
-    } else if (i == (position + NUM_LEDS - 1) % NUM_LEDS) {
-      setIndividualLEDColor(i, 255, 20, 0, FLOWING_BRIGHTNESS / 2);
-    } else {
-      setIndividualLEDColor(i, 0, 0, 0, 0);
-    }
+    setIndividualLEDColor(i, red, green, blue, FLOWING_BRIGHTNESS);
   }
   neopixel_show_P1_7(ledData, NUM_BYTES);
+  hue++;
 }
 
-// 每次按键依次切换：呼吸灯 -> 跑马灯 -> 幻彩灯 -> 呼吸灯
+// 每次按键依次切换：呼吸灯 -> 同步变色 -> 幻彩灯 -> 呼吸灯
 void cycleLedEffect() {
   if (selectedEffect == MODE_BREATHING) {
-    selectedEffect = MODE_CHASE;
-    USBSerial_println("FX|CHASE");
-  } else if (selectedEffect == MODE_CHASE) {
+    selectedEffect = MODE_SYNC_COLOR;
+    USBSerial_println("FX|SYNC");
+  } else if (selectedEffect == MODE_SYNC_COLOR) {
     selectedEffect = MODE_RAINBOW;
     USBSerial_println("FX|RAINBOW");
   } else {
@@ -391,7 +404,7 @@ void task3() {
   handleButtonEvents();
 }
 
-// 处理按键事件：释放一次按钮就切换到下一个灯效
+// 处理按键事件：按下按钮就切换，避免短按在释放阶段漏触发。
 void handleButtonEvents() {
   static unsigned long lastDebounceTime = 0;
   static int lastButtonState = HIGH;
@@ -407,7 +420,7 @@ void handleButtonEvents() {
   if ((currentMillis - lastDebounceTime) >= DEBOUNCE_DELAY &&
       currentButtonState != debouncedButtonState) {
     debouncedButtonState = currentButtonState;
-    if (debouncedButtonState == HIGH) cycleLedEffect();
+    if (debouncedButtonState == LOW) cycleLedEffect();
   }
 }
 

@@ -56,7 +56,7 @@ def parse_effect_event(line: str) -> str | None:
     parts = [part.strip().upper() for part in line.strip().split("|")]
     if len(parts) != 2 or parts[0] != "FX":
         return None
-    if parts[1] not in {"BREATHING", "CHASE", "RAINBOW"}:
+    if parts[1] not in {"BREATHING", "SYNC", "RAINBOW"}:
         return None
     return parts[1]
 
@@ -132,7 +132,7 @@ class SerialWorker:
                         if effect is not None:
                             message = {
                                 "BREATHING": "灯效：呼吸灯",
-                                "CHASE": "灯效：跑马灯",
+                                "SYNC": "灯效：同步变色",
                                 "RAINBOW": "灯效：幻彩灯",
                             }[effect]
                             now = time.time()

@@ -13,6 +13,6 @@ def test_parse_invalid_frames():
 
 def test_parse_effect_events():
     assert parse_effect_event("FX|BREATHING\r\n") == "BREATHING"
-    assert parse_effect_event("fx|chase") == "CHASE"
+    assert parse_effect_event("fx|sync") == "SYNC"
     assert parse_effect_event("FX|RAINBOW") == "RAINBOW"
     assert parse_effect_event("BTN|MASTER|ON") is None
