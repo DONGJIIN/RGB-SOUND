@@ -30,6 +30,7 @@ def create_app(store, serial_worker, audio) -> Flask:
     def status():
         state = serial_worker.snapshot()
         state["audioError"] = audio.last_error
+        state["product"] = "RGB-SOUND"
         state["version"] = __version__
         return jsonify(state)
 

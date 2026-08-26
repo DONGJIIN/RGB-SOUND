@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import threading
 from pathlib import Path
 import os
 import socket
+from urllib.error import HTTPError, URLError
+from urllib.request import urlopen
 
 from waitress import create_server
 
@@ -14,12 +17,27 @@ from .serial_worker import SerialWorker
 from .server import create_app
 
 
-def service_is_running(host: str, port: int) -> bool:
+def port_is_open(host: str, port: int) -> bool:
     try:
         with socket.create_connection((host, port), timeout=0.25):
             return True
     except OSError:
         return False
+
+
+def probe_rgb_sound(host: str, port: int) -> dict | None:
+    """Return status only when the listener is an actual RGB-SOUND instance."""
+    try:
+        with urlopen(f"http://{host}:{port}/api/status", timeout=0.5) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        if data.get("product") == "RGB-SOUND":
+            return data
+        # Backward compatibility with releases before the product marker existed.
+        if "version" in data and "frames" in data and "values" in data:
+            return data
+    except (HTTPError, URLError, OSError, ValueError, json.JSONDecodeError):
+        return None
+    return None
 
 
 def open_desktop_window(url: str, *, start_hidden: bool = False, with_tray: bool = True) -> None:
@@ -92,10 +110,12 @@ def main() -> None:
     args = parser.parse_args()
 
     url = f"http://{args.host}:{args.port}"
-    if service_is_running(args.host, args.port):
+    if probe_rgb_sound(args.host, args.port) is not None:
         if not args.no_browser:
             open_desktop_window(url, start_hidden=False, with_tray=False)
         return
+    if port_is_open(args.host, args.port):
+        raise RuntimeError(f"本机端口 {args.port} 已被其他程序占用，请关闭占用程序后重试")
 
     store = ConfigStore()
     audio = AudioController()
