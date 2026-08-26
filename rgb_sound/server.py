@@ -74,6 +74,10 @@ def create_app(store, serial_worker, audio) -> Flask:
         serial_worker.reconnect()
         return jsonify({"ok": True})
 
+    @app.get("/api/startup")
+    def get_startup():
+        return jsonify({"enabled": startup_enabled()})
+
     @app.post("/api/startup")
     def startup():
         enabled = bool((request.get_json(silent=True) or {}).get("enabled", True))
@@ -112,6 +116,11 @@ def set_startup(enabled: bool) -> None:
     link.WindowStyle = 7
     link.Description = "RGB-SOUND 音频控制器"
     link.Save()
+
+
+def startup_enabled() -> bool:
+    startup = Path(os.environ["APPDATA"]) / "Microsoft/Windows/Start Menu/Programs/Startup"
+    return (startup / "RGB-SOUND.lnk").exists()
 
 
 def open_workspace_folder() -> None:

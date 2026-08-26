@@ -83,6 +83,17 @@ def test_frontend_assets_include_legacy_fallback_and_cache_buster(tmp_path):
     html = client.get("/").get_data(as_text=True)
     javascript = client.get("/static/app.js").get_data(as_text=True)
 
-    assert "app.js?v=1.5.0" in html
+    assert "app.js?v=1.5.1" in html
     assert "DEFAULT_LIGHTING" in javascript
     assert "config.lighting||{}" in javascript
+
+
+def test_startup_status_reports_real_shortcut_state(tmp_path, monkeypatch):
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    client = create_app(ConfigStore(tmp_path / "config.json"), FakeSerialWorker(), FakeAudio()).test_client()
+    assert client.get("/api/startup").get_json() == {"enabled": False}
+
+    startup = tmp_path / "Microsoft/Windows/Start Menu/Programs/Startup"
+    startup.mkdir(parents=True)
+    (startup / "RGB-SOUND.lnk").write_bytes(b"shortcut")
+    assert client.get("/api/startup").get_json() == {"enabled": True}
