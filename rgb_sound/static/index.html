@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>RGB-SOUND 控制台</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
+  <main>
+    <header>
+      <div class="brand"><span class="brand-mark">R</span><div><h1>RGB-SOUND</h1><p>四通道桌面音频控制台</p></div></div>
+      <div id="deviceBadge" class="status waiting"><i></i><span>正在查找设备</span></div>
+    </header>
+
+    <section class="hero panel">
+      <div><span class="eyebrow">LIVE MIXER</span><h2>每一个旋钮，<br><em>控制你想听见的声音。</em></h2><p>选择应用或系统通道，保存后立即生效。所有数据只在这台电脑上处理。</p></div>
+      <div class="device-visual" aria-label="四个旋钮的实时位置">
+        <div id="miniKnobs" class="mini-knobs"></div>
+        <div class="device-line"></div><small>CH552 · USB SERIAL</small>
+      </div>
+    </section>
+
+    <div class="section-title"><div><span class="eyebrow">CHANNEL ROUTING</span><h2>旋钮映射</h2></div><button id="scanButton" class="ghost">↻ 扫描声音通道</button></div>
+    <section id="channels" class="channel-grid"></section>
+
+    <section class="settings panel">
+      <div class="section-title"><div><span class="eyebrow">DEVICE</span><h2>设备与校准</h2></div></div>
+      <div class="settings-grid">
+        <label>串口<select id="serialPort"></select></label>
+        <label>波特率<input id="baudRate" type="number" min="300" max="2000000"></label>
+        <label>原始最小值<input id="rawMin" type="number"></label>
+        <label>原始最大值<input id="rawMax" type="number"></label>
+        <label>旋钮灵敏度<select id="sensitivity"><option value="0.25">高（推荐）</option><option value="0.5">标准</option><option value="1">抗抖</option></select></label>
+      </div>
+      <div class="switch-row"><div><strong>反转旋钮方向</strong><small>默认固定为逆时针增大；仅特殊硬件需要开启</small></div><label class="switch"><input id="invert" type="checkbox"><span></span></label></div>
+      <div class="switch-row"><div><strong>开机自动运行</strong><small>登录 Windows 后在后台启动</small></div><label class="switch"><input id="startup" type="checkbox"><span></span></label></div>
+    </section>
+
+    <footer><span>RGB-SOUND <b id="version"></b></span><span>本机地址 · 127.0.0.1:17321</span></footer>
+  </main>
+
+  <div id="saveBar" class="save-bar"><span id="saveMessage">配置已修改</span><button id="discardButton" class="ghost">放弃</button><button id="saveButton" class="primary">保存并应用</button></div>
+  <div id="toast" class="toast"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

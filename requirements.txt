@@ -1,0 +1,9 @@
+Flask==3.1.2
+waitress==3.0.2
+pyserial==3.5
+pycaw==20251023
+comtypes==1.4.12
+psutil==7.0.0
+pywebview==6.2.1
+pystray==0.19.5
+Pillow==12.3.0

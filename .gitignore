@@ -1,0 +1,17 @@
+.venv/
+build/
+dist/
+*.spec
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+config.local.json
+*.log
+.edge-qa/
+/ui-preview.png
+/RGB-SOUND.exe
+*.lnk
+/.tools/
+/firmware-source.zip
+/firmware/build/

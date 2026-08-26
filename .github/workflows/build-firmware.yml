@@ -1,0 +1,38 @@
+name: Build CH552 firmware
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "firmware/CH552G_4RV_V1.1/**"
+      - ".github/workflows/build-firmware.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: arduino/setup-arduino-cli@v2
+        with:
+          version: "1.4.1"
+
+      - name: Install Ch55xduino
+        run: |
+          arduino-cli config init
+          arduino-cli config set board_manager.additional_urls https://raw.githubusercontent.com/DeqingSun/ch55xduino/ch55xduino/package_ch55xduino_mcs51_index.json
+          arduino-cli core update-index
+          arduino-cli core install CH55xDuino:mcs51@0.0.25
+
+      - name: Compile firmware
+        run: |
+          arduino-cli compile \
+            --fqbn 'CH55xDuino:mcs51:ch552:clock=24internal,upload_method=usb,usb_settings=usbcdc,bootloader_pin=p36' \
+            --output-dir firmware/build \
+            firmware/CH552G_4RV_V1.1
+          cp firmware/build/CH552G_4RV_V1.1.ino.hex firmware/RGB-SOUND-CH552.hex
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RGB-SOUND-CH552
+          path: firmware/RGB-SOUND-CH552.hex
