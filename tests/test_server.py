@@ -83,9 +83,10 @@ def test_frontend_assets_include_legacy_fallback_and_cache_buster(tmp_path):
     html = client.get("/").get_data(as_text=True)
     javascript = client.get("/static/app.js").get_data(as_text=True)
 
-    assert "app.js?v=1.6.0" in html
+    assert "app.js?v=1.6.1" in html
     assert "DEFAULT_LIGHTING" in javascript
     assert "config.lighting||{}" in javascript
+    assert "当前没有音频会话" in javascript
 
     status = client.get("/api/status").get_json()
     assert status["product"] == "RGB-SOUND"

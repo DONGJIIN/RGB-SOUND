@@ -28,10 +28,13 @@ def normalize_raw_value(raw: int, minimum: int, maximum: int, invert: bool = Fal
 
 
 class AudioController:
+    FULL_SYNC_INTERVAL = 2.0
+
     def __init__(self):
         self._lock = threading.RLock()
         self._last_values: list[float | None] = [None] * 4
         self._last_update = 0.0
+        self._last_full_sync = 0.0
         self._last_error: str | None = None
         self._speaker_volume_control = None
         self._microphone_volume_control = None
@@ -99,11 +102,12 @@ class AudioController:
             normalized.append(normalize_raw_value(raw, minimum, maximum, serial_config["invert"]))
 
         changed = []
+        full_sync = now - self._last_full_sync >= self.FULL_SYNC_INTERVAL
         threshold = behavior["changeThreshold"]
         for index, value in enumerate(normalized):
             percent = value * 100.0
             previous = self._last_values[index]
-            if previous is None or abs(percent - previous) >= threshold or percent <= 0.0 or percent >= 100.0:
+            if full_sync or previous is None or abs(percent - previous) >= threshold or percent <= 0.0 or percent >= 100.0:
                 changed.append((index, value, percent))
         if not changed:
             return
@@ -128,6 +132,8 @@ class AudioController:
                         self._apply_targets(channel["targets"], value, sessions, assigned)
                     self._last_values[index] = percent
                 self._last_update = now
+                if full_sync:
+                    self._last_full_sync = now
                 self._last_error = None
             except Exception as error:
                 self._last_error = str(error)

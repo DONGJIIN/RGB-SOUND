@@ -19,9 +19,9 @@ class FakeResponse:
 
 def test_probe_recognizes_current_and_legacy_rgb_sound(monkeypatch):
     monkeypatch.setattr(main, "urlopen", lambda *_args, **_kwargs: FakeResponse({
-        "product": "RGB-SOUND", "version": "1.6.0",
+        "product": "RGB-SOUND", "version": "1.6.1",
     }))
-    assert main.probe_rgb_sound("127.0.0.1", 17321)["version"] == "1.6.0"
+    assert main.probe_rgb_sound("127.0.0.1", 17321)["version"] == "1.6.1"
 
     monkeypatch.setattr(main, "urlopen", lambda *_args, **_kwargs: FakeResponse({
         "version": "1.2.0", "frames": 10, "values": [0, 0, 0, 0],
